@@ -5,8 +5,8 @@ const TOKEN_URL = "https://hub.lettofy.com/auth/token";
 const SSE_URL = "https://hub.lettofy.com/events/pyrus/tasks/stream";
 const BUBBLE_WEBHOOK = "https://comfortisland.bubbleapps.io/version-test/api/1.1/wf/sse_event";
 
-const CLIENT_ID = "my-api-client-123";
-const CLIENT_SECRET = "secret_abc123def456";
+const CLIENT_ID = "bubble-production";
+const CLIENT_SECRET = "fM3wBY2hlXMMWiPtNqPHRGZuDJxO8gUWrv5-08C6mKM";
 
 let accessToken = null;
 let es = null;
