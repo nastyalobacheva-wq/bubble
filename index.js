@@ -9,41 +9,69 @@ const CLIENT_ID = "my-api-client-123";
 const CLIENT_SECRET = "secret_abc123def456";
 
 let accessToken = null;
+let es = null;
 
 // 🔑 Получение токена
 async function getToken() {
-  const res = await fetch(TOKEN_URL, {
-    method: "POST",
-    headers: {
-      "accept": "application/json",
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      client_id: CLIENT_ID,
-      client_secret: CLIENT_SECRET
-    })
-  });
+  try {
+    console.log("🔑 Запрашиваем новый токен...");
 
-  const data = await res.json();
-  accessToken = data.access_token;
+    const res = await fetch(TOKEN_URL, {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        client_id: CLIENT_ID,
+        client_secret: CLIENT_SECRET
+      })
+    });
 
-  console.log("✅ Новый токен получен");
+    const data = await res.json();
+
+    if (!data.access_token) {
+      console.error("❌ Токен не получен:", data);
+      return false;
+    }
+
+    accessToken = data.access_token;
+
+    console.log("✅ Новый токен получен");
+    return true;
+
+  } catch (err) {
+    console.error("❌ Ошибка получения токена:", err);
+    return false;
+  }
 }
 
 // 📡 Подключение к SSE
-function connectSSE() {
+async function connectSSE() {
   if (!accessToken) {
-    console.log("⏳ Нет токена, ждём...");
-    return;
+    console.log("⏳ Нет токена, пробуем получить...");
+    const ok = await getToken();
+    if (!ok) return;
+  }
+
+  // закрываем старое соединение если есть
+  if (es) {
+    console.log("♻️ Закрываем старое SSE соединение");
+    es.close();
+    es = null;
   }
 
   console.log("🔌 Подключаемся к SSE...");
 
-  const es = new EventSource(SSE_URL, {
+  es = new EventSource(SSE_URL, {
     headers: {
-      "Authorization": `Bearer ${accessToken}`
+      Authorization: `Bearer ${accessToken}`
     }
   });
+
+  es.onopen = () => {
+    console.log("🟢 SSE соединение открыто");
+  };
 
   es.onmessage = async (event) => {
     console.log("📥 SSE событие:", event.data);
@@ -60,6 +88,7 @@ function connectSSE() {
       });
 
       console.log("📤 Отправлено в Bubble");
+
     } catch (err) {
       console.error("❌ Ошибка отправки в Bubble:", err);
     }
@@ -68,25 +97,50 @@ function connectSSE() {
   es.onerror = async (err) => {
     console.error("❌ SSE ошибка:", err);
 
-    es.close();
+    if (es) {
+      es.close();
+      es = null;
+    }
 
-    // возможно токен протух → обновляем
-    await getToken();
+    // пробуем обновить токен и переподключиться
+    console.log("🔄 Пробуем восстановиться...");
 
-    // переподключаемся
-    setTimeout(connectSSE, 3000);
+    const ok = await getToken();
+
+    setTimeout(() => {
+      if (ok) {
+        connectSSE();
+      } else {
+        console.log("⏳ Повторная попытка через 5 сек...");
+        setTimeout(connectSSE, 5000);
+      }
+    }, 3000);
   };
 }
 
-// 🔁 Основной запуск
+// 🚀 Старт
 async function start() {
-  await getToken();
-  connectSSE();
+  const ok = await getToken();
 
-  // обновляем токен каждые 50 минут
+  if (!ok) {
+    console.log("⏳ Не удалось получить токен при старте, пробуем ещё раз...");
+    setTimeout(start, 5000);
+    return;
+  }
+
+  await connectSSE();
+
+  // 🔁 Плановое обновление токена (каждые 5 часов)
   setInterval(async () => {
-    await getToken();
-  }, 50 * 60 * 1000);
+    console.log("🔄 Плановое обновление токена + реконнект SSE");
+
+    const ok = await getToken();
+
+    if (ok) {
+      connectSSE();
+    }
+
+  }, 5 * 60 * 60 * 1000);
 }
 
 start();
